@@ -8,6 +8,9 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().url(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(8),
+
+  // NFR-01 · ไม่มีค่า default — กุญแจที่เดาได้เท่ากับไม่มีกุญแจ
+  JWT_SECRET: z.string().min(32, "JWT_SECRET ต้องยาวอย่างน้อย 32 ตัวอักษร"),
 });
 
 export type Env = z.infer<typeof envSchema>;

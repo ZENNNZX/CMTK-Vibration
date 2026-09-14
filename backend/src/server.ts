@@ -8,7 +8,7 @@ const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL });
 const pool = createPool(env.DATABASE_URL, env.DB_POOL_MAX);
 
-const server = createApp(pool, log).listen(env.PORT, () => {
+const server = createApp(pool, { log, jwtSecret: env.JWT_SECRET }).listen(env.PORT, () => {
   log.info({ port: env.PORT }, 'API พร้อมรับคำขอ');
 });
 
