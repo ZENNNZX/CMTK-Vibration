@@ -71,6 +71,13 @@ cmtk-monitoring/
 
 ### 4 · Deploy the stack
 
+stack นี้จะขึ้นแค่ **db + ingestion** — `api` ถูกกันไว้หลัง profile `web`
+เพื่อไม่ให้ build frontend บน arm64 (หลายนาที) มาขวางการเริ่มเก็บข้อมูล
+และถ้า build พังก็ไม่ลากให้ทั้ง stack ขึ้นไม่ได้
+
+> เปิดหน้าเว็บทีหลัง: ลบบรรทัด `profiles: [web]` ใน `docker-compose.yml` แล้ว redeploy stack
+
+
 build ครั้งแรกใช้เวลาราว 2–4 นาที (npm ci บน arm64)
 
 ---
