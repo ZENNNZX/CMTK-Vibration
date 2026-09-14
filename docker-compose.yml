@@ -1,0 +1,112 @@
+# CMTK Condition Monitoring — stack สำหรับ Portainer
+#
+# Deploy: Portainer → Stacks → Add stack → Repository
+#   ตัวแปรทั้งหมดใส่ในช่อง Environment variables ของ Portainer
+#   **อย่าใส่ค่าจริงลงไฟล์นี้แล้ว commit** (NFR-07)
+#
+# ตอนนี้มี db + api + ingestion — frontend กับ backup ค่อยเพิ่มเมื่อมีของจริง
+# ingestion ไม่ต้องรออะไร เก็บข้อมูลได้ตั้งแต่วันแรก
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cmtk-db
+    environment:
+      POSTGRES_DB: cmtk_monitoring
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # ภาษาไทยใน name ต้องเรียงถูก
+      LANG: C.UTF-8
+    command: >
+      postgres
+        -c synchronous_commit=off
+        -c wal_compression=on
+        -c checkpoint_timeout=15min
+        -c shared_buffers=512MB
+        -c max_connections=40
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # migration 001–009 รันอัตโนมัติเรียงตามชื่อ ตอนสร้าง volume ครั้งแรกเท่านั้น
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d cmtk_monitoring"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    # ไม่ publish พอร์ตออกนอกบอร์ด — เข้าถึงได้เฉพาะใน stack
+    networks: [cmtk]
+
+  api:
+    build:
+      # context เป็นรากเพราะ image นี้ build frontend เข้าไปด้วย (ไม่มี nginx)
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cmtk-api
+    # ไม่ขึ้นตอน deploy ปกติ — ingestion ต้องเริ่มเก็บข้อมูลโดยไม่รอ build frontend บน arm64
+    # เปิดเมื่อพร้อม: docker compose --profile web up -d  (หรือลบสองบรรทัดนี้)
+    profiles: [web]
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/cmtk_monitoring
+      DB_POOL_MAX: 8
+      PORT: 3000
+    ports: ["49180:3000"]          # พอร์ตเดิมของ dashboard
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [cmtk]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ingestion:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile
+    container_name: cmtk-ingestion
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/cmtk_monitoring
+      DB_POOL_MAX: 4
+
+      MQTT_URL: ${MQTT_URL}
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_TOPIC: ${MQTT_TOPIC:-balluff/cmtk/+/iolink/devices/#}
+
+      AGGREGATE_WINDOW_SECONDS: 60
+      STALE_THRESHOLD_SECONDS: 300
+
+      # ปิด LINE ไว้ก่อนตอน deploy รอบแรก — เปิดเมื่อยืนยันว่าข้อมูลเข้าถูกแล้ว
+      LINE_ENABLED: ${LINE_ENABLED:-false}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_RECIPIENT_COUNT: ${LINE_RECIPIENT_COUNT:-5}
+      LINE_DEBOUNCE_MINUTES: 60
+      LINE_DAILY_CAP_PER_MOTOR: 3
+      LINE_MONTHLY_MESSAGE_CAP: 350
+      LINE_MONTHLY_RESERVE: 150
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # ingestion ออกอย่างเดียว ไม่รับ inbound — ไม่ต้อง publish พอร์ต
+    networks: [cmtk, default]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"     # SD card มีจำกัด อย่าให้ log กินพื้นที่
+        max-file: "3"
+
+volumes:
+  pgdata:
+
+networks:
+  cmtk:
+    internal: false   # ingestion ต้องออกไป MQTT ที่ 172.16.0.2 และ api.line.me

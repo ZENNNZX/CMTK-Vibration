@@ -1,0 +1,14 @@
+ผู้ใช้ admin คนแรก — ห้ามใส่ไว้ใน migration ที่ commit
+
+รันครั้งเดียวหลัง stack ขึ้นแล้ว ผ่าน Portainer Console ของคอนเทนเนอร์ db:
+
+  psql -U "$POSTGRES_USER" -d cmtk_monitoring -c \
+    "INSERT INTO users (email, password_hash, display_name, role)
+     VALUES ('admin@gsbattery.co.th', '<BCRYPT_HASH>', 'ผู้ดูแลระบบ', 'admin')
+     ON CONFLICT (email) DO NOTHING;"
+
+สร้าง BCRYPT_HASH (saltRounds 10) จากเครื่องไหนก็ได้ที่มี node:
+
+  node -e "import('bcrypt').then(b=>b.hash(process.argv[1],10).then(console.log))" 'รหัสที่ต้องการ'
+
+ห้ามพิมพ์รหัสดิบลงไฟล์ ห้าม commit hash ลง git (NFR-07)

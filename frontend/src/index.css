@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/* Design token จาก DSN-CMTK-001 (docs/02) — ห้ามใส่ hex ตรง ๆ ในคอมโพเนนต์ */
+@theme {
+  --font-sans: 'Kanit', system-ui, -apple-system, sans-serif;
+
+  /* สีโต้ตอบ — มีสีเดียวทั้งระบบ */
+  --color-primary: #005baa;
+  --color-primary-hover: #004a8c;
+  --color-secondary: #00b6f1;
+  --color-on-primary: #ffffff;
+
+  /* สีสถานะเครื่องจักร — ห้ามใช้กับปุ่มหรือของตกแต่ง */
+  --color-zone-a: #157a52;
+  --color-zone-b: #c7eb02;
+  --color-zone-c: #ff9300;
+  --color-zone-d: #d92d20;
+  --color-alarm: #d92d20;
+  --color-warning: #ff9300;
+  --color-ok: #157a52;
+  --color-offline: #6b7684;
+
+  /* พื้นผิวและตัวหนังสือ */
+  --color-canvas: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #eef2f6;
+  --color-hairline: #dfe5ec;
+  --color-ink: #231f20;
+  --color-ink-secondary: #46505e;
+  --color-ink-muted: #6b7684;
+  --color-ink-faint: #6e7685;
+
+  --text-metric-hero: 32px;
+  --text-page-title: 24px;
+  --text-metric: 20px;
+  --text-section: 16px;
+  --text-body: 14px;
+  --text-caption: 12px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* ตัวเลขที่เทียบกันในแนวตั้งต้องไม่เลื่อนหลัก (docs/02 §2) */
+  font-variant-numeric: tabular-nums;
+}
