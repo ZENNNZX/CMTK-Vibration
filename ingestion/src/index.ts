@@ -19,6 +19,8 @@ const agg = new Aggregator();
 const det = new EdgeDetector();
 
 const lastSeen = new Map<number, Date>();
+/** เวลาสูงสุดที่เห็นใน payload — ใช้เป็นฐานเวลาของ aggregator แทนนาฬิกาเครื่องเรา */
+let maxDataTs = new Date(0);
 let motors = new Map<string, MotorRef>();
 const byId = new Map<number, MotorRef>();
 
@@ -100,6 +102,9 @@ async function handleTransitions(list: Transition[]): Promise<void> {
       zone: t.zoneTo ?? null,
       at: t.at,
     };
+    // LINE ปิดอยู่ = ไม่ได้พยายามส่ง จึงไม่บันทึกลง notification_log และไม่กินโควตา
+    // (ถ้าบันทึกเป็น sent ตัวนับรายเดือนจะเต็มทั้งที่ไม่มีใครได้รับอะไรเลย)
+    if (!env.LINE_ENABLED) continue;
     const status = await notifier.maybeSend(payload, new Date());
     log.info({ eventId, status }, 'ผลการแจ้งเตือน');
   }
@@ -132,7 +137,10 @@ function onMessage(topic: string, raw: Buffer): void {
 
   if (msg.type === 'dataFromDevice') {
     stat.parsed += 1;
-    lastSeen.set(motor.id, at);
+    // เวลา "เงียบ" ต้องวัดจากเวลาที่ข้อความมาถึง ไม่ใช่เวลาใน payload
+    // นาฬิกาบอร์ดเดินคลาดจากเราได้ (วัดจริงเจอช้า 444 วินาที) ถ้าใช้ payload จะกลายเป็นหลุดถาวร
+    lastSeen.set(motor.id, new Date());
+    if (at > maxDataTs) maxDataTs = at;
     agg.add(motor.id, at, msg as DeviceData);
     void handleTransitions(det.feed(motor.id, msg as DeviceData, at)).catch((err) =>
       log.error({ err }, 'จัดการ transition ไม่สำเร็จ'),
@@ -150,7 +158,13 @@ function onMessage(topic: string, raw: Buffer): void {
 
 async function flushTick(): Promise<void> {
   const now = new Date();
-  const rows = agg.flush(now);
+  // ต้อง flush ด้วยเวลาของข้อมูลเอง — นาฬิกาบอร์ดช้ากว่าเรา 7 นาที
+  // ถ้าใช้ now ของเครื่อง ทุกถังถูกตัดตั้งแต่เพิ่งเปิด แล้วตัวอย่างที่เหลือโดน ON CONFLICT ทิ้ง
+  //
+  // ถอยอีก 1 นาที เพราะ 4 พอร์ตไม่ได้มาถึงพร้อมกัน — ปิดถังทันทีที่ maxDataTs ข้ามนาที
+  // จะทิ้งของพอร์ตที่มาช้า วัดจริงเจอหาย 34 จาก 120 ตัวอย่าง
+  // ponytail: ผ่อนเป็นค่าคงที่ 1 นาที ถ้าพอร์ตมาช้ากว่านั้นค่อยทำเป็น env
+  const rows = agg.flush(new Date(maxDataTs.getTime() - 60_000));
 
   if (rows.length > 0) {
     try {

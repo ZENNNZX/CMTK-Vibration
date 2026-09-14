@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "migrate": "node --env-file=.env migrate.mjs",
     "dev": "npm run build && node --env-file=.env dist/src/index.js",
     "build": "tsc",
     "test": "vitest run",
