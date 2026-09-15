@@ -6,6 +6,7 @@ import type { Db } from './config/db.js';
 import { errorHandler, notFound } from './middlewares/errorHandler.js';
 import { authRoute } from './routes/auth.js';
 import { healthRoute } from './routes/health.js';
+import { motorRoute } from './routes/motors.js';
 
 export interface AppOptions {
   log?: Logger;
@@ -28,6 +29,7 @@ export function createApp(db: Db, opts: AppOptions = {}): express.Express {
 
   app.use('/api', healthRoute(db));
   app.use('/api', authRoute(db, jwtSecret));
+  app.use('/api', motorRoute(db, jwtSecret));
 
   // ไม่มี nginx — Express เสิร์ฟไฟล์ที่ build แล้วเอง (docs/04 §3)
   // ตั้ง STATIC_DIR เฉพาะใน container ที่มี frontend build อยู่จริง เทสต์ไม่ต้องมีไฟล์
