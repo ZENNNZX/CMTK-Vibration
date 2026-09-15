@@ -19,6 +19,11 @@ const envSchema = z.object({
   AGGREGATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   STALE_THRESHOLD_SECONDS: z.coerce.number().int().positive().default(300),
 
+  // ปุ่มปรับนาฬิกาเซ็นเซอร์ — บอร์ด CMTK ส่ง timestamp ลงท้าย Z แต่ค่าเป็นเวลาไทย
+  // วัดจริง: payload 12:53 ขณะ UTC จริง 05:53 → ต้องตั้ง -420
+  // แก้ที่ตัวบอร์ดได้เมื่อไหร่ ให้กลับเป็น 0 โดยไม่ต้องแตะโค้ด
+  SENSOR_CLOCK_OFFSET_MINUTES: z.coerce.number().int().min(-1440).max(1440).default(0),
+
   LINE_ENABLED: z
     .string()
     .default('true')

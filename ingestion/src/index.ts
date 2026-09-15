@@ -2,7 +2,7 @@ import pg from 'pg';
 import pino from 'pino';
 
 import { loadEnv } from './config/env.js';
-import { parseMessage, parseTopic, type DeviceData } from './schema.js';
+import { parseMessage, parseTopic, sensorTime, type DeviceData } from './schema.js';
 import { Aggregator } from './aggregator.js';
 import { EdgeDetector, type Transition } from './edgeDetector.js';
 import { Notifier, type NotifiableEvent } from './notifier.js';
@@ -133,7 +133,7 @@ function onMessage(topic: string, raw: Buffer): void {
   }
 
   const msg = parsed.message;
-  const at = new Date(msg.timestamp);
+  const at = sensorTime(msg.timestamp, env.SENSOR_CLOCK_OFFSET_MINUTES);
 
   if (msg.type === 'dataFromDevice') {
     stat.parsed += 1;

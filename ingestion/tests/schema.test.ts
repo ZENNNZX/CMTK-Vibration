@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMessage, parseTopic, FIELD } from '../src/schema.js';
+import { parseMessage, parseTopic, sensorTime, FIELD } from '../src/schema.js';
 
 /** payload จริงจาก master2/port0 · 2026-09-11 */
 const REAL_DATA = JSON.stringify({
@@ -110,5 +110,19 @@ describe('parseTopic', () => {
   it('topic ที่ไม่เข้าแบบคืน null', () => {
     expect(parseTopic('balluff/cmtk/master2/iolink/devices/events')).toBeNull();
     expect(parseTopic('random/topic')).toBeNull();
+  });
+});
+
+describe('sensorTime', () => {
+  it('offset 0 → ได้เวลาเดิมเป๊ะ', () => {
+    expect(sensorTime('2026-09-15T12:53:45.439Z', 0).toISOString()).toBe('2026-09-15T12:53:45.439Z');
+  });
+
+  it('บอร์ด CMTK ส่งเวลาไทยแต่ติดป้าย Z → ถอย 420 นาทีได้ UTC จริง', () => {
+    expect(sensorTime('2026-09-15T12:53:45.439Z', -420).toISOString()).toBe('2026-09-15T05:53:45.439Z');
+  });
+
+  it('ข้ามวันแล้วต้องถอยวันที่ให้ถูก ไม่ใช่แค่ลบชั่วโมง', () => {
+    expect(sensorTime('2026-09-15T03:00:00.000Z', -420).toISOString()).toBe('2026-09-14T20:00:00.000Z');
   });
 });

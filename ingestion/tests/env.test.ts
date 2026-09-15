@@ -51,3 +51,17 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ ...BASE, DB_POOL_MAX: '-1' })).toThrowError();
   });
 });
+
+describe('SENSOR_CLOCK_OFFSET_MINUTES', () => {
+  it('ไม่ตั้งค่า → 0 ไม่แก้เวลาที่บอร์ดส่งมา', () => {
+    expect(loadEnv(BASE).SENSOR_CLOCK_OFFSET_MINUTES).toBe(0);
+  });
+
+  it('รับค่าติดลบได้ — บอร์ด CMTK ส่งเวลาไทยแต่ติดป้าย Z ต้องถอย 7 ชม.', () => {
+    expect(loadEnv({ ...BASE, SENSOR_CLOCK_OFFSET_MINUTES: '-420' }).SENSOR_CLOCK_OFFSET_MINUTES).toBe(-420);
+  });
+
+  it('เกินหนึ่งวัน → ไม่ให้บูต เพราะนั่นคือพิมพ์ผิด ไม่ใช่การปรับนาฬิกา', () => {
+    expect(() => loadEnv({ ...BASE, SENSOR_CLOCK_OFFSET_MINUTES: '5000' })).toThrow();
+  });
+});

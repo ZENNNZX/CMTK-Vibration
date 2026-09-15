@@ -127,3 +127,11 @@ export function parseTopic(topic: string): TopicParts | null {
         : 'other';
   return { master: Number(m[1]), port: Number(m[2]), leaf };
 }
+
+/**
+ * เวลาที่บอร์ดส่งมา ปรับด้วย offset ที่ตั้งไว้
+ * บอร์ด CMTK ติดป้าย Z ให้เวลาไทย ทำให้ new Date() ได้ค่าล้ำหน้าจริง 7 ชม.
+ * ไม่ hardcode -420 ไว้ในโค้ด เพราะนาฬิกาฮาร์ดแวร์เป็นของที่ปรับได้และควรปรับที่ต้นทาง
+ */
+export const sensorTime = (iso: string, offsetMinutes: number): Date =>
+  new Date(new Date(iso).getTime() + offsetMinutes * 60_000);

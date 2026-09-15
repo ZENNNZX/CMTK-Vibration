@@ -83,6 +83,8 @@ services:
 
       AGGREGATE_WINDOW_SECONDS: 60
       STALE_THRESHOLD_SECONDS: 300
+      # บอร์ดส่งเวลาไทยแต่ติดป้าย Z — ถอย 7 ชม. ให้เป็น UTC จริง
+      SENSOR_CLOCK_OFFSET_MINUTES: ${SENSOR_CLOCK_OFFSET_MINUTES:--420}
 
       # ปิด LINE ไว้ก่อนตอน deploy รอบแรก — เปิดเมื่อยืนยันว่าข้อมูลเข้าถูกแล้ว
       LINE_ENABLED: ${LINE_ENABLED:-false}
