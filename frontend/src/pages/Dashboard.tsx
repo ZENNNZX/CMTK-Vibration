@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { PortRail } from '../components/PortRail';
 import { ZoneBand } from '../components/ZoneBand';
-import { ZONE, type Zone } from '../constants/tokens';
+import { ZONE, alertOf, type Zone } from '../constants/tokens';
 import { api, clearToken, type ApiError } from '../services/api';
 
 interface Motor {
@@ -43,12 +44,19 @@ function Metric({ label, value, unit }: { label: string; value: string; unit: st
   );
 }
 
-function MotorCard({ m }: { m: Motor }) {
+const CARD = 'w-full rounded-lg bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
+
+function MotorCard({ m, onOpen }: { m: Motor; onOpen: () => void }) {
   if (!m.isOnline) {
     return (
-      <article className="rounded-lg border border-offline bg-surface p-4">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`ดูรายละเอียด ${m.tag} ${m.name} ไม่มีข้อมูลเข้ามา`}
+        className={`${CARD} border border-offline`}
+      >
         <header className="mb-3">
-          <h2 className="text-section font-semibold text-ink">{m.tag}</h2>
+          <h3 className="text-section font-semibold text-ink">{m.tag}</h3>
           <p className="text-body text-ink-muted">{m.name}</p>
         </header>
         {/* AC-011-04 · เงียบไม่ได้แปลว่าปลอดภัย — ห้ามโชว์ค่าเก่าค้าง */}
@@ -56,15 +64,33 @@ function MotorCard({ m }: { m: Motor }) {
           <span aria-hidden="true">■ </span>ไม่มีข้อมูลเข้ามา
         </p>
         <p className="mt-2 text-caption text-ink-muted">ล่าสุด {timeTH(m.lastMinuteTs)} น.</p>
-      </article>
+      </button>
     );
   }
 
+  // DSN §4 card-alert · โซน C/D ขึ้นขอบหนาพร้อมป้าย ไม่ใช่เปลี่ยนแค่สี (NFR-09)
+  const alert = alertOf(m.zone);
+
   return (
-    <article className="rounded-lg border border-hairline bg-surface p-4">
-      <header className="mb-3">
-        <h2 className="text-section font-semibold text-ink">{m.tag}</h2>
-        <p className="text-body text-ink-muted">{m.name}</p>
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`ดูรายละเอียด ${m.tag} ${m.name}${alert ? ` ${alert.text}` : ''}`}
+      className={`${CARD} ${alert ? alert.border : 'border border-hairline'}`}
+    >
+      <header className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-section font-semibold text-ink">{m.tag}</h3>
+          <p className="text-body text-ink-muted">{m.name}</p>
+        </div>
+        {alert && (
+          <span
+            className={`shrink-0 rounded-sm px-2 py-1 text-caption font-semibold ${alert.badge}`}
+          >
+            <span aria-hidden="true">{alert.glyph} </span>
+            {alert.text}
+          </span>
+        )}
       </header>
 
       <div className="mb-3 grid grid-cols-3 gap-3">
@@ -77,11 +103,17 @@ function MotorCard({ m }: { m: Motor }) {
       <p className="mt-2 text-caption text-ink-muted">
         {m.zone ? ZONE[m.zone].label : 'ยังไม่ทราบระดับ'} · ล่าสุด {timeTH(m.lastMinuteTs)} น.
       </p>
-    </article>
+    </button>
   );
 }
 
-export function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
+export function Dashboard({
+  onSignedOut,
+  onOpenMotor,
+}: {
+  onSignedOut: () => void;
+  onOpenMotor?: (id: number) => void;
+}) {
   const [view, setView] = useState<View>({ kind: 'loading' });
 
   const load = useCallback(() => {
@@ -104,57 +136,48 @@ export function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
     return () => clearInterval(t);
   }, [load]);
 
+  const open = (id: number) => onOpenMotor?.(id);
+
   return (
-    <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-page-title font-semibold text-ink">สถานะมอเตอร์</h1>
-          <p className="text-caption text-ink-muted">CMTK Condition Monitoring · GS Battery</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            clearToken();
-            onSignedOut();
-          }}
-          className="min-h-11 rounded-md border border-hairline px-4 text-body font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        >
-          ออกจากระบบ
-        </button>
-      </header>
+    <>
+        <h1 className="mb-1 text-page-title font-semibold text-ink">สถานะมอเตอร์</h1>
+        <p className="mb-4 text-caption text-ink-muted">GS Battery · โรงงาน CMTK</p>
 
-      {view.kind === 'loading' && (
-        <p role="status" aria-live="polite" className="text-body text-ink-secondary">
-          กำลังโหลดข้อมูลมอเตอร์…
-        </p>
-      )}
-
-      {view.kind === 'error' && (
-        <div role="alert" className="flex flex-wrap items-center gap-3">
-          <p className="text-body text-ink">
-            <span aria-hidden="true">■ </span>
-            {view.message}
+        {view.kind === 'loading' && (
+          <p role="status" aria-live="polite" className="text-body text-ink-secondary">
+            กำลังโหลดข้อมูลมอเตอร์…
           </p>
-          <button
-            type="button"
-            onClick={load}
-            className="min-h-11 rounded-md bg-primary px-4 text-body font-semibold text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            ลองใหม่
-          </button>
-        </div>
-      )}
+        )}
 
-      {view.kind === 'ready' &&
-        (view.motors.length === 0 ? (
-          <p className="text-body text-ink-muted">ยังไม่มีมอเตอร์ในระบบ</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {view.motors.map((m) => (
-              <MotorCard key={m.id} m={m} />
-            ))}
+        {view.kind === 'error' && (
+          <div role="alert" className="flex flex-wrap items-center gap-3">
+            <p className="text-body text-ink">
+              <span aria-hidden="true">■ </span>
+              {view.message}
+            </p>
+            <button
+              type="button"
+              onClick={load}
+              className="min-h-11 rounded-md bg-primary px-4 text-body font-semibold text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              ลองใหม่
+            </button>
           </div>
-        ))}
-    </main>
+        )}
+
+        {view.kind === 'ready' &&
+          (view.motors.length === 0 ? (
+            <p className="text-body text-ink-muted">ยังไม่มีมอเตอร์ในระบบ</p>
+          ) : (
+            <div className="space-y-4">
+              <PortRail motors={view.motors} masterNo={view.motors[0].masterNo} onPick={open} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {view.motors.map((m) => (
+                  <MotorCard key={m.id} m={m} onOpen={() => open(m.id)} />
+                ))}
+              </div>
+            </div>
+          ))}
+    </>
   );
 }

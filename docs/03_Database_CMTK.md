@@ -314,6 +314,50 @@ CREATE INDEX idx_maint_cause ON maintenance_logs (cause, performed_at DESC);
 
 ---
 
+### 4.9 predictions
+
+> เพิ่มใน v1.1 · migration `011_predictions.sql` · **รอ senior review เหมือนทั้งเอกสาร**
+
+```sql
+CREATE TYPE predict_metric AS ENUM ('vrms_y', 'vrms_z', 'temperature');
+
+CREATE TABLE predictions (
+    id              BIGSERIAL      PRIMARY KEY,
+    motor_id        INTEGER        NOT NULL REFERENCES motors(id) ON DELETE CASCADE,
+    metric          predict_metric NOT NULL,
+    model           VARCHAR(30)    NOT NULL DEFAULT 'linear-ols',
+    predicted_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),  -- ทำนายตอนไหน
+    target_day      DATE           NOT NULL,                -- ทำนายถึงวันไหน
+    horizon_days    SMALLINT       NOT NULL,
+    sample_count    SMALLINT       NOT NULL,
+    predicted_value NUMERIC(7,3)   NOT NULL,
+    ci_low          NUMERIC(7,3),
+    ci_high         NUMERIC(7,3),
+    actual_value    NUMERIC(7,3),                           -- เติมเมื่อถึงวันจริง
+    scored_at       TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_prediction UNIQUE (motor_id, metric, model, target_day, horizon_days)
+);
+
+CREATE INDEX idx_pred_motor_day ON predictions (motor_id, target_day DESC);
+CREATE INDEX idx_pred_day       ON predictions (target_day DESC);
+CREATE INDEX idx_pred_unscored  ON predictions (target_day) WHERE actual_value IS NULL;
+```
+
+**เหมือน `maintenance_logs` ตรงที่ย้อนกลับไปสร้างทีหลังไม่ได้** — หน้าสรุปรายเดือนวัด
+Accuracy / Precision / Recall / F1 จากการเทียบ `predicted_value` กับ `actual_value`
+ถ้าไม่บันทึกไว้ตั้งแต่ตอนทำนาย แล้วไปคำนวณใหม่จากข้อมูลที่รู้ครบแล้ว
+จะได้ตัวเลขที่สวยเสมอและไม่มีความหมาย — เป็นการวัดตัวเองด้วยเฉลยที่เปิดดูแล้ว
+
+**`predicted_at` กับ `target_day` ต้องแยกกันเสมอ** เพราะคะแนนขึ้นกับว่าทำนายล่วงหน้าไกลแค่ไหน
+(`horizon_days`) ทำนายพรุ่งนี้กับทำนายอีก 30 วันเป็นคนละงาน ห้ามเอามารวมคะแนนกัน
+
+`ck_pred_scored` บังคับว่า `actual_value` กับ `scored_at` ต้องมีหรือไม่มีพร้อมกัน —
+กันแถวครึ่ง ๆ กลาง ๆ ที่ทำให้นับคะแนนผิด
+
+---
+
 ### 4.6 notification_recipients
 
 > 🚧 **โครงไว้ก่อน** — รอปิด B-11 แล้วเติมค่าจริง
@@ -490,8 +534,12 @@ migrations/
 ├── 006_notifications.sql         -- recipients + log
 ├── 007_audit.sql
 ├── 008_triggers.sql
-└── 009_seed.sql                  -- admin คนแรก + มอเตอร์ 4 ตัว
+├── 009_seed.sql                  -- admin คนแรก + มอเตอร์ 4 ตัว
+└── 011_predictions.sql           -- predictions + predict_metric (v1.1)
 ```
+
+> `010` เว้นไว้ตั้งใจ — `010_admin_user.sql.README` เป็นคำสั่งที่ต้องรันมือ
+> ไม่ใช่ migration เพราะมี bcrypt hash อยู่ข้างใน ห้าม commit (NFR-07)
 
 **กฎ:** เดินหน้าอย่างเดียว ห้ามแก้ไฟล์ที่ merge แล้ว ทุกไฟล์ต้องมี `-- rollback:` กำกับไว้ท้ายไฟล์
 

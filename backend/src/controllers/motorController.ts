@@ -9,5 +9,28 @@ export function createMotorController(service: MotorService) {
       .then((data) => res.json({ success: true, data }))
       .catch(next);
   };
-  return { list };
+
+  // ค่าที่ผ่าน Zod แล้วอยู่ที่ res.locals — express 5 เขียนทับ req.params/query ไม่ได้
+  const detail: RequestHandler = (_req, res, next) => {
+    service
+      .detail(res.locals.params.id)
+      .then((data) => res.json({ success: true, data }))
+      .catch(next);
+  };
+
+  const readings: RequestHandler = (_req, res, next) => {
+    service
+      .readings(res.locals.params.id, res.locals.query.hours)
+      .then((data) => res.json({ success: true, data }))
+      .catch(next);
+  };
+
+  const update: RequestHandler = (req, res, next) => {
+    service
+      .update(res.locals.params.id, req.body)
+      .then((data) => res.json({ success: true, data }))
+      .catch(next);
+  };
+
+  return { list, detail, readings, update };
 }

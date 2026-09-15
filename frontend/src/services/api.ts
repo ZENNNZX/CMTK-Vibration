@@ -3,10 +3,18 @@
  * รูปแบบ response ตายตัวทั้งระบบตาม SOP-DEV-001 · แกะ data ออกให้ที่เดียว
  */
 const TOKEN_KEY = 'cmtk.token';
+const ROLE_KEY = 'cmtk.role';
 
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string): void => localStorage.setItem(TOKEN_KEY, t);
-export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);
+export const clearToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ROLE_KEY);
+};
+
+// role เก็บไว้ซ่อน/แสดงปุ่มเท่านั้น — สิทธิ์จริงตัดสินที่ backend ทุกครั้ง (AC-002-01)
+export const getRole = (): string => localStorage.getItem(ROLE_KEY) ?? 'manager';
+export const setRole = (r: string): void => localStorage.setItem(ROLE_KEY, r);
 
 export interface ApiError {
   status: number;

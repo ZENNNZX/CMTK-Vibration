@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 
-import { api, setToken, type ApiError } from '../services/api';
+import { api, setRole, setToken, type ApiError } from '../services/api';
 
 interface LoginResult {
   token: string;
@@ -26,6 +26,7 @@ export function Login({ onSignedIn }: { onSignedIn: (user: LoginResult['user']) 
     api<LoginResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
       .then((r) => {
         setToken(r.token);
+        setRole(r.user.role);
         onSignedIn(r.user);
       })
       .catch((err: ApiError) => setError(err.message))
@@ -70,7 +71,7 @@ export function Login({ onSignedIn }: { onSignedIn: (user: LoginResult['user']) 
           </div>
 
           {error && (
-            <p role="alert" className="rounded-sm bg-[#fdeceb] px-3 py-2 text-body text-[#a4201a]">
+            <p role="alert" className="rounded-sm bg-danger-surface px-3 py-2 text-body text-danger-ink">
               <span aria-hidden="true">■ </span>
               {error}
             </p>

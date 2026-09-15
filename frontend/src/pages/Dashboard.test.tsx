@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { Dashboard } from './Dashboard';
 
@@ -23,7 +24,7 @@ describe('Dashboard', () => {
   it('แสดงค่าจริงของมอเตอร์ พร้อมหน่วยแยกจากตัวเลข', async () => {
     vi.stubGlobal('fetch', reply(200, { success: true, data: [motor()] }));
     render(<Dashboard onSignedOut={() => {}} />);
-    expect(await screen.findByText('MOTOR-01')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'MOTOR-01' })).toBeInTheDocument();
     expect(screen.getByText('1.45')).toBeInTheDocument();
     expect(screen.getByText('47.0')).toBeInTheDocument();
     expect(screen.getAllByText('mm/s')).toHaveLength(2);
@@ -50,5 +51,34 @@ describe('Dashboard', () => {
     await screen.findByRole('alert');
     expect(onSignedOut).toHaveBeenCalled();
     expect(localStorage.getItem('cmtk.token')).toBeNull();
+  });
+
+  it('DSN §4 · port rail แสดงครบ 8 พอร์ต พอร์ตที่ไม่มีมอเตอร์บอกว่าว่าง', async () => {
+    const two = [motor(), motor({ id: 2, tag: 'MOTOR-02', portNo: 1 })];
+    vi.stubGlobal('fetch', reply(200, { success: true, data: two }));
+    render(<Dashboard onSignedOut={() => {}} />);
+    expect(await screen.findByText(/ใช้งาน 2 จาก 8 พอร์ต/)).toBeInTheDocument();
+    expect(screen.getAllByText('ว่าง')).toHaveLength(6);
+  });
+
+  it('DSN §4 · card-alert · โซน D ต้องมีป้ายเตือน ไม่ใช่แค่เปลี่ยนสีขอบ', async () => {
+    vi.stubGlobal('fetch', reply(200, { success: true, data: [motor({ zone: 'D' })] }));
+    render(<Dashboard onSignedOut={() => {}} />);
+    expect(await screen.findByText('Alarm')).toBeInTheDocument();
+  });
+
+  it('DSN §4 · โซน B ปกติ ไม่ต้องมีป้ายเตือน', async () => {
+    vi.stubGlobal('fetch', reply(200, { success: true, data: [motor()] }));
+    render(<Dashboard onSignedOut={() => {}} />);
+    await screen.findByRole('heading', { name: 'MOTOR-01' });
+    expect(screen.queryByText(/^(Alarm|Warning)$/)).not.toBeInTheDocument();
+  });
+
+  it('US-006 · การ์ดกดได้ และส่ง id ของมอเตอร์ตัวที่กด', async () => {
+    vi.stubGlobal('fetch', reply(200, { success: true, data: [motor({ id: 7 })] }));
+    const onOpenMotor = vi.fn();
+    render(<Dashboard onSignedOut={() => {}} onOpenMotor={onOpenMotor} />);
+    await userEvent.click(await screen.findByRole('button', { name: /ดูรายละเอียด MOTOR-01/ }));
+    expect(onOpenMotor).toHaveBeenCalledWith(7);
   });
 });

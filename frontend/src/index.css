@@ -21,6 +21,10 @@
   --color-offline: #6b7684;
 
   /* พื้นผิวและตัวหนังสือ */
+  /* พื้นข้อความผิดพลาดในฟอร์ม — ไม่ใช่สีสถานะเครื่องจักร จึงแยก token ออกมา */
+  --color-danger-surface: #fdeceb;
+  --color-danger-ink: #a4201a;
+
   --color-canvas: #f4f6f9;
   --color-surface: #ffffff;
   --color-surface-sunken: #eef2f6;

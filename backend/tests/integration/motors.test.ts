@@ -51,6 +51,9 @@ describe('GET /api/motors', () => {
       temperature: 47,
       lastMinuteTs: MINUTE,
       isOnline: true,
+      // หน้า Admin ใช้สองตัวนี้ — อยู่ในแถวเดียวกันอยู่แล้ว ไม่ต้องยิงคิวรีเพิ่ม
+      ratedKw: null,
+      sensorMount: null,
     });
   });
 
