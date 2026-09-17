@@ -2,13 +2,14 @@ import pg from 'pg';
 import pino from 'pino';
 
 import { loadEnv } from './config/env.js';
-import { parseMessage, parseTopic, sensorTime, type DeviceData } from './schema.js';
+import { parseMessage, parseTopic, sensorTime, unknownNumericFields, type DeviceData } from './schema.js';
 import { Aggregator } from './aggregator.js';
 import { EdgeDetector, type Transition } from './edgeDetector.js';
 import { Notifier, type NotifiableEvent } from './notifier.js';
 import { Repository, type MotorRef } from './repository.js';
 import { connectMqtt } from './mqtt.js';
 import { createLineSender } from './line.js';
+import { createInfluxWriter, type InfluxWriter } from './influxWriter.js';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL });
@@ -23,6 +24,21 @@ const lastSeen = new Map<number, Date>();
 let maxDataTs = new Date(0);
 let motors = new Map<string, MotorRef>();
 const byId = new Map<number, MotorRef>();
+
+/** เตือนครั้งเดียวต่อชื่อ — Zod ตัด field ที่ไม่รู้จักทิ้งเงียบ เคยทำให้ a-Peak หายไปทั้งที่บอร์ดส่งมาแล้ว */
+const warnedFields = new Set<string>();
+
+/**
+ * เขียนค่าดิบลง InfluxDB ของเราเอง — ไม่ตั้ง INFLUX2_TOKEN ก็ปิดไปเฉย ๆ
+ * Postgres ยังทำงานเหมือนเดิม ไม่ผูกชะตากัน
+ */
+const influx: InfluxWriter | null =
+  env.INFLUX2_URL && env.INFLUX2_TOKEN && env.INFLUX2_ORG && env.INFLUX2_BUCKET
+    ? createInfluxWriter(
+        { url: env.INFLUX2_URL, org: env.INFLUX2_ORG, bucket: env.INFLUX2_BUCKET, token: env.INFLUX2_TOKEN },
+        log,
+      )
+    : null;
 
 /** ตัวนับสำหรับดูสุขภาพ — log ทุกนาทีตอน flush */
 const stat = { received: 0, parsed: 0, unknownType: 0, badPayload: 0, unmapped: 0 };
@@ -110,6 +126,16 @@ async function handleTransitions(list: Transition[]): Promise<void> {
   }
 }
 
+/** อ่าน items จาก payload ดิบก่อน Zod ตัด — ใช้เฉพาะตรวจ field ใหม่ */
+function rawItems(raw: Buffer): Record<string, unknown> {
+  try {
+    const j = JSON.parse(raw.toString()) as { data?: { items?: Record<string, unknown> } };
+    return j.data?.items ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function onMessage(topic: string, raw: Buffer): void {
   stat.received += 1;
 
@@ -133,6 +159,15 @@ function onMessage(topic: string, raw: Buffer): void {
   }
 
   const msg = parsed.message;
+
+  if (msg.type === 'dataFromDevice') {
+    for (const f of unknownNumericFields(rawItems(raw))) {
+      if (warnedFields.has(f)) continue;
+      warnedFields.add(f);
+      log.warn({ field: f }, 'เซ็นเซอร์ส่ง measurement ที่ยังไม่รองรับ — เพิ่มใน FIELD ของ schema.ts ก่อนถึงจะเก็บได้');
+    }
+  }
+
   const at = sensorTime(msg.timestamp, env.SENSOR_CLOCK_OFFSET_MINUTES);
 
   if (msg.type === 'dataFromDevice') {
@@ -142,6 +177,12 @@ function onMessage(topic: string, raw: Buffer): void {
     lastSeen.set(motor.id, new Date());
     if (at > maxDataTs) maxDataTs = at;
     agg.add(motor.id, at, msg as DeviceData);
+    // เก็บค่าดิบ 0.5 วินาทีไว้ที่ InfluxDB ของเราเอง — Postgres รับเฉพาะสรุปรายนาที
+    influx?.add(
+      { motorId: motor.id, tag: motor.tag, port: parts.port },
+      (msg as DeviceData).data.items as Record<string, unknown>,
+      at,
+    );
     void handleTransitions(det.feed(motor.id, msg as DeviceData, at)).catch((err) =>
       log.error({ err }, 'จัดการ transition ไม่สำเร็จ'),
     );
@@ -227,6 +268,14 @@ async function main(): Promise<void> {
         log.info({ rows: remaining.length }, 'บันทึกข้อมูลค้างก่อนปิด');
       } catch (err) {
         log.error({ err }, 'บันทึกข้อมูลค้างไม่สำเร็จ');
+      }
+    }
+    // ส่งของค้างใน InfluxDB ก่อนปิด ไม่ให้หายเหมือนกัน
+    if (influx) {
+      try {
+        await influx.close();
+      } catch (err) {
+        log.error({ err }, 'ปิด InfluxDB writer ไม่สำเร็จ');
       }
     }
     await pool.end();

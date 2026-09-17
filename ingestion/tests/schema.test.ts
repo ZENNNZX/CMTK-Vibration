@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMessage, parseTopic, sensorTime, FIELD } from '../src/schema.js';
+import { parseMessage, parseTopic, sensorTime, unknownNumericFields, FIELD } from '../src/schema.js';
 
 /** payload จริงจาก master2/port0 · 2026-09-11 */
 const REAL_DATA = JSON.stringify({
@@ -124,5 +124,41 @@ describe('sensorTime', () => {
 
   it('ข้ามวันแล้วต้องถอยวันที่ให้ถูก ไม่ใช่แค่ลบชั่วโมง', () => {
     expect(sensorTime('2026-09-15T03:00:00.000Z', -420).toISOString()).toBe('2026-09-14T20:00:00.000Z');
+  });
+});
+
+describe('field ที่เพิ่มจาก monitoring function ใหม่', () => {
+  const payload = (items: Record<string, unknown>) =>
+    JSON.stringify({
+      type: 'dataFromDevice',
+      timestamp: '2026-09-17T11:20:34.229083625Z',
+      data: { isValid: true, items },
+    });
+
+  it('a-Peak ต้องผ่าน Zod ไม่ถูกตัดทิ้ง', () => {
+    const r = parseMessage(Buffer.from(payload({ 'Vibration Acceleration, Peak Magnitude': 0.27 })));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.message as unknown as { data: { items: Record<string, number> } }).data.items).toHaveProperty(
+      'Vibration Acceleration, Peak Magnitude',
+      0.27,
+    );
+  });
+
+  it('a-RMS ต้องผ่านด้วย — ใช้คู่กับ a-Peak คำนวณ crest factor', () => {
+    const r = parseMessage(Buffer.from(payload({ 'Vibration Acceleration, RMS Magnitude': 0.08 })));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.message as unknown as { data: { items: Record<string, number> } }).data.items).toHaveProperty(
+      'Vibration Acceleration, RMS Magnitude',
+      0.08,
+    );
+  });
+
+  it('unknownNumericFields บอกชื่อ field ที่ยังไม่รู้จัก — กันโดนตัดเงียบเหมือน a-Peak', () => {
+    expect(unknownNumericFields({ Temperature: 30, 'Brand New Metric': 1.5 })).toEqual([
+      'Brand New Metric',
+    ]);
+    expect(unknownNumericFields({ Temperature: 30, 'Severity Zone A': true })).toEqual([]);
   });
 });

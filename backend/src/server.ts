@@ -5,12 +5,25 @@ import { createPool } from './config/db.js';
 import { loadEnv } from './config/env.js';
 import { createPredictionRepository } from './repositories/predictionRepository.js';
 import { createPredictionService } from './services/predictionService.js';
+import { createInfluxReadingRepository } from './repositories/influxReadingRepository.js';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL });
 const pool = createPool(env.DATABASE_URL, env.DB_POOL_MAX);
 
-const server = createApp(pool, { log, jwtSecret: env.JWT_SECRET }).listen(env.PORT, () => {
+/** ไม่ครบทั้งสี่ค่า = ไม่เปิดใช้ กราฟใช้ Postgres เหมือนเดิม */
+const influx =
+  env.INFLUX2_URL && env.INFLUX2_TOKEN && env.INFLUX2_ORG && env.INFLUX2_BUCKET
+    ? createInfluxReadingRepository({
+        url: env.INFLUX2_URL,
+        org: env.INFLUX2_ORG,
+        bucket: env.INFLUX2_BUCKET,
+        token: env.INFLUX2_TOKEN,
+      })
+    : undefined;
+log.info({ influx: influx ? 'เปิด' : 'ปิด (ใช้ Postgres)' }, 'แหล่งอนุกรมเวลา');
+
+const server = createApp(pool, { log, jwtSecret: env.JWT_SECRET, influx }).listen(env.PORT, () => {
   log.info({ port: env.PORT }, 'API พร้อมรับคำขอ');
 });
 

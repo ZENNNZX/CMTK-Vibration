@@ -24,6 +24,13 @@ const envSchema = z.object({
   // แก้ที่ตัวบอร์ดได้เมื่อไหร่ ให้กลับเป็น 0 โดยไม่ต้องแตะโค้ด
   SENSOR_CLOCK_OFFSET_MINUTES: z.coerce.number().int().min(-1440).max(1440).default(0),
 
+  // InfluxDB 2 ของเราเอง — เก็บอนุกรมเวลาดิบ 0.5 วินาที
+  // ไม่ใส่ token = ปิดฟีเจอร์นี้ ingestion ยังเขียน Postgres ได้ตามปกติ
+  INFLUX2_URL: z.string().url().optional(),
+  INFLUX2_ORG: z.string().optional(),
+  INFLUX2_BUCKET: z.string().optional(),
+  INFLUX2_TOKEN: z.string().optional(),
+
   LINE_ENABLED: z
     .string()
     .default('true')

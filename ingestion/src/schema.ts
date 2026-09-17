@@ -8,6 +8,10 @@ export const FIELD = {
   temperature: 'Temperature',
   vrmsY: 'Vibration Velocity, RMS Y',
   vrmsZ: 'Vibration Velocity, RMS Z',
+  // เพิ่มเมื่อเปิด monitoring function ใหม่ใน BCM Assistant
+  // aPeak/aRMS ใช้คู่กันคำนวณ crest factor — ตัวชี้แบริ่งที่ขยับก่อน RMS
+  aPeak: 'Vibration Acceleration, Peak Magnitude',
+  aRms: 'Vibration Acceleration, RMS Magnitude',
   preAlarm: 'Pre-Alarm Vibration Velocity, RMS',
   mainAlarm: 'Main Alarm Vibration Velocity, RMS',
   tempLow: 'Lower Alarm Contact Temperature',
@@ -29,6 +33,8 @@ const itemsSchema = z
     [FIELD.temperature]: z.number(),
     [FIELD.vrmsY]: z.number(),
     [FIELD.vrmsZ]: z.number(),
+    [FIELD.aPeak]: z.number(),
+    [FIELD.aRms]: z.number(),
     [FIELD.preAlarm]: z.boolean(),
     [FIELD.mainAlarm]: z.boolean(),
     [FIELD.tempLow]: z.boolean(),
@@ -135,3 +141,13 @@ export function parseTopic(topic: string): TopicParts | null {
  */
 export const sensorTime = (iso: string, offsetMinutes: number): Date =>
   new Date(new Date(iso).getTime() + offsetMinutes * 60_000);
+
+/**
+ * Zod ตัด key ที่ไม่ได้ประกาศทิ้งเงียบ ๆ — เคยทำให้ a-Peak หายไปทั้งที่บอร์ดส่งมาแล้ว
+ * ใช้ตรวจ payload ดิบก่อน parse เพื่อเตือนว่ามี measurement ใหม่ที่ยังไม่ได้รองรับ
+ */
+const KNOWN = new Set<string>(Object.values(FIELD));
+export const unknownNumericFields = (items: Record<string, unknown>): string[] =>
+  Object.entries(items)
+    .filter(([k, v]) => typeof v === 'number' && !KNOWN.has(k))
+    .map(([k]) => k);

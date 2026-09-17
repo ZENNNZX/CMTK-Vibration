@@ -55,7 +55,12 @@ const STALE_MS = 300_000;
 const num = (v: string | null | undefined): number | null =>
   v === null || v === undefined ? null : Number(v);
 
-export function createMotorService(repo: MotorRepository) {
+/** ที่มาของอนุกรมเวลาความละเอียดสูง — ไม่มีก็ใช้ Postgres แทน */
+export interface InfluxSource {
+  listReadings(motorId: number, hours: number): Promise<unknown[]>;
+}
+
+export function createMotorService(repo: MotorRepository, influx?: InfluxSource) {
   return {
     async list(now = new Date()): Promise<MotorCard[]> {
       const rows = await repo.listWithLatest();
@@ -134,6 +139,17 @@ export function createMotorService(repo: MotorRepository) {
     /** AC-007-03 · ไม่มีข้อมูลคือ array ว่าง ไม่ใช่ 404 — 404 สงวนไว้ให้ "ไม่มีมอเตอร์ตัวนี้" */
     async readings(id: number, hours: number): Promise<Reading[]> {
       if (!(await repo.findById(id))) throw new NotFoundError('มอเตอร์');
+
+      // InfluxDB เก็บดิบ 0.5 วินาที · Postgres เก็บสรุปรายนาที
+      // InfluxDB ล่มแล้วต้องไม่ทำให้กราฟพังทั้งหน้า — ถอยไปใช้รายนาทีแทน ความละเอียดต่ำลงแต่ยังอ่านได้
+      if (influx) {
+        try {
+          return (await influx.listReadings(id, hours)) as Reading[];
+        } catch {
+          // ตั้งใจกลืน — สาเหตุจริงอยู่ที่ health check ของ InfluxDB ไม่ใช่ที่คำขอนี้
+        }
+      }
+
       const rows: ReadingRow[] = await repo.listReadings(id, hours);
       return rows.map((r) => ({
         ts: new Date(r.minute_ts).toISOString(),

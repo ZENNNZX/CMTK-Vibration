@@ -8,8 +8,13 @@ import { createMotorRepository } from '../repositories/motorRepository.js';
 import { createMotorService } from '../services/motorService.js';
 import { motorIdSchema, motorPatchSchema, readingsQuerySchema } from '../validators/motorValidators.js';
 
-export function motorRoute(db: Db, jwtSecret: string): Router {
-  const c = createMotorController(createMotorService(createMotorRepository(db)));
+/** ที่มาของอนุกรมเวลาความละเอียดสูง — ไม่มีก็ใช้ Postgres แทน */
+export interface InfluxSource {
+  listReadings(motorId: number, hours: number): Promise<unknown[]>;
+}
+
+export function motorRoute(db: Db, jwtSecret: string, influx?: InfluxSource): Router {
+  const c = createMotorController(createMotorService(createMotorRepository(db), influx));
   const router = Router();
   const auth = authenticate(jwtSecret);
 

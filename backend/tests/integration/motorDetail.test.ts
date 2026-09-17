@@ -105,3 +105,63 @@ describe('GET /api/motors/:id/readings', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /api/motors/:id/readings · ดึงจาก InfluxDB', () => {
+  const influxRow = { ts: '2026-09-17T04:00:00.000Z', vrmsY: 1.4, vrmsZ: 1.2, temperature: 48.3, aPeak: 0.27, zone: null };
+  const withInflux = (influx: { listReadings: (id: number, h: number) => Promise<unknown[]> }) =>
+    createApp(db([motorRow()], [readingRow()]), { jwtSecret: SECRET, influx });
+
+  it('มี InfluxDB → ใช้ค่าจาก InfluxDB และส่ง aPeak ออกไปด้วย', async () => {
+    const app2 = withInflux({ listReadings: async () => [influxRow] });
+    const res = await auth(request(app2).get('/api/motors/1/readings?hours=1'));
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({ vrmsY: 1.4, aPeak: 0.27 });
+  });
+
+  it('ส่งช่วงเวลาที่ขอต่อไปให้ InfluxDB ตรง ๆ', async () => {
+    const seen: number[] = [];
+    const app2 = withInflux({
+      listReadings: async (_id, h) => {
+        seen.push(h);
+        return [influxRow];
+      },
+    });
+    await auth(request(app2).get('/api/motors/1/readings?hours=72'));
+    expect(seen).toEqual([72]);
+  });
+
+  it('InfluxDB ล่ม → ถอยไปใช้ readings_minute ของ Postgres ไม่ใช่พังทั้งหน้า', async () => {
+    const app2 = withInflux({
+      listReadings: async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    });
+    const res = await auth(request(app2).get('/api/motors/1/readings?hours=1'));
+    expect(res.status).toBe(200);
+    // ค่าจาก readingRow() ของ Postgres
+    expect(res.body.data[0]).toMatchObject({ vrmsY: 1.446, vrmsZ: 1.289 });
+  });
+
+  it('ไม่ตั้งค่า InfluxDB เลย → ใช้ Postgres เหมือนเดิม ไม่ต้องแก้อะไร', async () => {
+    const res = await auth(request(app([motorRow()], [readingRow()])).get('/api/motors/1/readings'));
+    expect(res.status).toBe(200);
+    expect(res.body.data[0]).toMatchObject({ vrmsY: 1.446 });
+  });
+
+  it('ไม่มีมอเตอร์ตาม id → 404 ก่อนจะไปแตะ InfluxDB', async () => {
+    let called = false;
+    const app2 = createApp(db([], []), {
+      jwtSecret: SECRET,
+      influx: {
+        listReadings: async () => {
+          called = true;
+          return [];
+        },
+      },
+    });
+    const res = await auth(request(app2).get('/api/motors/9/readings'));
+    expect(res.status).toBe(404);
+    expect(called).toBe(false);
+  });
+});

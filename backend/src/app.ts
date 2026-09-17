@@ -8,13 +8,15 @@ import { authRoute } from './routes/auth.js';
 import { healthRoute } from './routes/health.js';
 import { eventRoute } from './routes/events.js';
 import { maintenanceRoute } from './routes/maintenance.js';
-import { motorRoute } from './routes/motors.js';
+import { motorRoute, type InfluxSource } from './routes/motors.js';
 import { predictionRoute } from './routes/predictions.js';
 
 export interface AppOptions {
   log?: Logger;
   staticDir?: string;
   jwtSecret?: string;
+  /** ไม่ส่งมา = กราฟใช้ readings_minute ของ Postgres เหมือนเดิม */
+  influx?: InfluxSource;
 }
 
 /** รับ db เข้ามาแทนที่จะสร้างเอง — เทสต์จึงรันได้โดยไม่ต้องมี PostgreSQL */
@@ -23,6 +25,7 @@ export function createApp(db: Db, opts: AppOptions = {}): express.Express {
     log = pino({ level: 'silent' }),
     staticDir = process.env.STATIC_DIR,
     jwtSecret = process.env.JWT_SECRET ?? '',
+    influx,
   } = opts;
 
   const app = express();
@@ -32,7 +35,7 @@ export function createApp(db: Db, opts: AppOptions = {}): express.Express {
 
   app.use('/api', healthRoute(db));
   app.use('/api', authRoute(db, jwtSecret));
-  app.use('/api', motorRoute(db, jwtSecret));
+  app.use('/api', motorRoute(db, jwtSecret, influx));
   app.use('/api', eventRoute(db, jwtSecret));
   app.use('/api', maintenanceRoute(db, jwtSecret));
   app.use('/api', predictionRoute(db, jwtSecret));
