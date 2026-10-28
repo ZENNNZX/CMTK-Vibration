@@ -58,9 +58,10 @@ for (const host of HOSTS) {
     // waveform/สเปกตรัมจริงเท่านั้น — peak/crest เป็นสเกลาร์ ไม่ใช่ข้อมูลความถี่
     const spectral = uniq.filter((k) => /spectr|fft|band|envelop|wave|harmon|raw/i.test(k));
     const extraScalars = uniq.filter((k) => /peak|crest|kurt|accel|a-rms|skew/i.test(k));
+    const hits = [...spectral, ...extraScalars];
     console.log('\n' + '='.repeat(60));
     if (hits.length) {
-      console.log('🎯 เจอ field ที่ไปต่อได้:', hits.map((r) => r[1]).join(', '));
+      console.log('🎯 เจอ field ที่ไปต่อได้:', hits.join(', '));
       console.log('   → คุยเรื่อง Python / FFT ได้เลย');
     } else {
       console.log('เจอแต่สเกลาร์ที่ประมวลผลแล้ว ไม่มี waveform');

@@ -1,0 +1,14 @@
+# เครื่องพัฒนาเครื่องนี้ — Postgres (เนทีฟ) กับ InfluxDB (docker) รันอยู่แล้วและมีข้อมูลจริงข้างใน
+# override นี้ชี้ ingestion ไปหาของที่มีอยู่ แทนที่จะสร้างตัวเปล่าขึ้นมาใหม่ทับ
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build ingestion
+#
+# ค่า DB_* / INFLUX2_* อ่านจาก .env ที่รากโปรเจกต์
+services:
+  ingestion:
+    # db ใน stack ไม่ได้ขึ้น — ฐานจริงอยู่บนโฮสต์
+    depends_on: !reset []
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@host.docker.internal:5432/${DB_NAME}
+      INFLUX2_URL: http://host.docker.internal:8086

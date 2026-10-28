@@ -53,6 +53,13 @@ services:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/cmtk_monitoring
       DB_POOL_MAX: 8
       PORT: 3000
+      # ขาดตัวนี้ = login ไม่ได้ ขึ้นมาก็ใช้ไม่ได้
+      JWT_SECRET: ${JWT_SECRET}
+      # ไม่ตั้ง = กราฟถอยไปอ่าน readings_minute ของ Postgres
+      INFLUX2_URL: ${INFLUX2_URL:-http://influxdb:8086}
+      INFLUX2_ORG: ${INFLUX2_ORG}
+      INFLUX2_BUCKET: ${INFLUX2_BUCKET}
+      INFLUX2_TOKEN: ${INFLUX2_TOKEN}
     ports: ["49180:3000"]          # พอร์ตเดิมของ dashboard
     depends_on:
       db:
@@ -83,8 +90,15 @@ services:
 
       AGGREGATE_WINDOW_SECONDS: 60
       STALE_THRESHOLD_SECONDS: 300
-      # บอร์ดส่งเวลาไทยแต่ติดป้าย Z — ถอย 7 ชม. ให้เป็น UTC จริง
-      SENSOR_CLOCK_OFFSET_MINUTES: ${SENSOR_CLOCK_OFFSET_MINUTES:--420}
+      # บอร์ดเคยส่งเวลาไทยติดป้าย Z (ต้อง -420) — restart 2026-10-28 แล้วนาฬิกาเป็น UTC จริง
+      SENSOR_CLOCK_OFFSET_MINUTES: ${SENSOR_CLOCK_OFFSET_MINUTES:-0}
+
+      # อนุกรมเวลาดิบ 0.5 วินาที — ไม่ใส่ token = ปิดฟีเจอร์ Postgres ยังเขียนตามปกติ
+      # ไม่ depends_on influxdb เพราะ writer เข้าคิวและลองใหม่เองอยู่แล้ว
+      INFLUX2_URL: ${INFLUX2_URL:-http://influxdb:8086}
+      INFLUX2_ORG: ${INFLUX2_ORG}
+      INFLUX2_BUCKET: ${INFLUX2_BUCKET}
+      INFLUX2_TOKEN: ${INFLUX2_TOKEN}
 
       # ปิด LINE ไว้ก่อนตอน deploy รอบแรก — เปิดเมื่อยืนยันว่าข้อมูลเข้าถูกแล้ว
       LINE_ENABLED: ${LINE_ENABLED:-false}
@@ -106,8 +120,53 @@ services:
         max-size: "10m"     # SD card มีจำกัด อย่าให้ log กินพื้นที่
         max-file: "3"
 
+  # ตรึงเวอร์ชันไว้ — "2" เลื่อนขึ้น 2.x ใหม่ได้เองตอน pull แล้วรู้ตอนมันพัง
+  influxdb:
+    image: influxdb:2.9.1-alpine
+    container_name: cmtk-influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX2_USER:-cmtk}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX2_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX2_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX2_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX2_TOKEN}
+    volumes:
+      - influxdata:/var/lib/influxdb2
+      - influxconfig:/etc/influxdb2
+    restart: unless-stopped
+    networks: [cmtk]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: cmtk-ml
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/cmtk_monitoring
+      # รอบเดียวกับงานทำนายฝั่ง Node — ดัชนีเป็นรายวัน รันถี่กว่านี้ก็ได้ค่าเดิม
+      ML_INTERVAL_SECONDS: ${ML_INTERVAL_SECONDS:-3600}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # ไม่ publish พอร์ต — เป็น batch job ไม่มี endpoint ให้ยิง
+    networks: [cmtk]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   pgdata:
+  influxdata:
+  influxconfig:
 
 networks:
   cmtk:
