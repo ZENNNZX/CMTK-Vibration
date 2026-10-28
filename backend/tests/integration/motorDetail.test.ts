@@ -108,8 +108,9 @@ describe('GET /api/motors/:id/readings', () => {
 
 describe('GET /api/motors/:id/readings · ดึงจาก InfluxDB', () => {
   const influxRow = { ts: '2026-09-17T04:00:00.000Z', vrmsY: 1.4, vrmsZ: 1.2, temperature: 48.3, aPeak: 0.27, zone: null };
-  const withInflux = (influx: { listReadings: (id: number, h: number) => Promise<unknown[]> }) =>
-    createApp(db([motorRow()], [readingRow()]), { jwtSecret: SECRET, influx });
+  const withInflux = (influx: {
+    listReadings: (id: number, start: Date, stop: Date) => Promise<unknown[]>;
+  }) => createApp(db([motorRow()], [readingRow()]), { jwtSecret: SECRET, influx });
 
   it('มี InfluxDB → ใช้ค่าจาก InfluxDB และส่ง aPeak ออกไปด้วย', async () => {
     const app2 = withInflux({ listReadings: async () => [influxRow] });
@@ -119,16 +120,54 @@ describe('GET /api/motors/:id/readings · ดึงจาก InfluxDB', () => {
     expect(res.body.data[0]).toMatchObject({ vrmsY: 1.4, aPeak: 0.27 });
   });
 
-  it('ส่งช่วงเวลาที่ขอต่อไปให้ InfluxDB ตรง ๆ', async () => {
-    const seen: number[] = [];
+  it('hours=72 → แปลงเป็นช่วงเวลายาว 72 ชม. นับถอยจากตอนนี้', async () => {
+    const seen: { start: Date; stop: Date }[] = [];
     const app2 = withInflux({
-      listReadings: async (_id, h) => {
-        seen.push(h);
+      listReadings: async (_id, start, stop) => {
+        seen.push({ start, stop });
         return [influxRow];
       },
     });
     await auth(request(app2).get('/api/motors/1/readings?hours=72'));
-    expect(seen).toEqual([72]);
+    expect(seen).toHaveLength(1);
+    const spanHours = (seen[0].stop.getTime() - seen[0].start.getTime()) / 3_600_000;
+    expect(spanHours).toBeCloseTo(72, 2);
+  });
+
+  it('เลือกวันที่เอง → ส่ง from/to ต่อไปให้ InfluxDB ตรง ๆ ไม่แปลงเป็น hours', async () => {
+    const seen: { start: Date; stop: Date }[] = [];
+    const app2 = withInflux({
+      listReadings: async (_id, start, stop) => {
+        seen.push({ start, stop });
+        return [influxRow];
+      },
+    });
+    await auth(
+      request(app2).get(
+        '/api/motors/1/readings?from=2026-09-18T00:00:00%2B07:00&to=2026-10-20T23:59:59%2B07:00',
+      ),
+    );
+    expect(seen[0].start.toISOString()).toBe('2026-09-17T17:00:00.000Z');
+    expect(seen[0].stop.toISOString()).toBe('2026-10-20T16:59:59.000Z');
+  });
+
+  it('ส่ง from มาข้างเดียว → 400 ไม่เดาปลายอีกข้างให้', async () => {
+    const res = await auth(request(app()).get('/api/motors/1/readings?from=2026-09-18'));
+    expect(res.status).toBe(400);
+  });
+
+  it('วันที่สิ้นสุดอยู่ก่อนวันที่เริ่ม → 400', async () => {
+    const res = await auth(
+      request(app()).get('/api/motors/1/readings?from=2026-10-20&to=2026-09-18'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('ช่วงยาวเกิน 90 วัน → 400 ไม่ปล่อยให้คิวรีทะลุเพดาน AC-007-02', async () => {
+    const res = await auth(
+      request(app()).get('/api/motors/1/readings?from=2026-01-01&to=2026-09-18'),
+    );
+    expect(res.status).toBe(400);
   });
 
   it('InfluxDB ล่ม → ถอยไปใช้ readings_minute ของ Postgres ไม่ใช่พังทั้งหน้า', async () => {

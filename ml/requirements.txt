@@ -1,0 +1,4 @@
+# เอาแค่สองตัว — Mahalanobis กับ ridge เขียนด้วย numpy ล้วนได้
+# ยังไม่ลง scikit-learn/pandas จนกว่าจะมีโมเดลที่ต้องใช้จริง (บอร์ดเป็น ARM ภาพยิ่งเล็กยิ่งดี)
+numpy==2.3.4
+psycopg[binary]==3.2.12

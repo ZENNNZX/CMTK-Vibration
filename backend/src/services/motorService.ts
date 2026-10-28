@@ -1,10 +1,11 @@
-import { NotFoundError, ValidationError } from '../middlewares/errorHandler.js';
+import { AppError, NotFoundError, ValidationError } from '../middlewares/errorHandler.js';
 import type {
   MotorDetailRow,
   MotorRepository,
   MotorWithLatestRow,
   ReadingRow,
 } from '../repositories/motorRepository.js';
+import { NAMEPLATE_FIELDS, type ReadingsRange } from '../validators/motorValidators.js';
 
 export interface MotorCard {
   id: number;
@@ -44,6 +45,10 @@ export interface Reading {
   vrmsY: number | null;
   vrmsZ: number | null;
   temperature: number | null;
+  /** เร่งสูงสุด (g) — มีเฉพาะทาง InfluxDB · readings_minute ไม่ได้เก็บคอลัมน์นี้ */
+  aPeak: number | null;
+  /** เร่ง RMS (g) — หน่วยเดียวกับ aPeak จึงหารกันเป็น crest factor ได้ที่ฝั่งแสดงผล */
+  aRms: number | null;
   zone: string | null;
 }
 
@@ -57,7 +62,7 @@ const num = (v: string | null | undefined): number | null =>
 
 /** ที่มาของอนุกรมเวลาความละเอียดสูง — ไม่มีก็ใช้ Postgres แทน */
 export interface InfluxSource {
-  listReadings(motorId: number, hours: number): Promise<unknown[]>;
+  listReadings(motorId: number, start: Date, stop: Date): Promise<unknown[]>;
 }
 
 export function createMotorService(repo: MotorRepository, influx?: InfluxSource) {
@@ -110,12 +115,21 @@ export function createMotorService(repo: MotorRepository, influx?: InfluxSource)
     async update(
       id: number,
       patch: {
+        tag?: string;
+        name?: string;
+        ratedKw?: number;
         warningThreshold?: number;
         alarmThreshold?: number;
         sensorMount?: string;
         sensorMountOffset?: [number, number, number] | null;
       },
+      role?: string,
     ): Promise<MotorDetail> {
+      // AC-002-01 · maintenance ปรับค่าตั้งได้ แต่ป้ายชื่อคือทะเบียนของเครื่อง ต้องเป็น admin
+      if (NAMEPLATE_FIELDS.some((f) => f in patch) && role !== 'admin') {
+        throw new AppError(403, 'แก้รหัส ชื่อ หรือกำลังมอเตอร์ได้เฉพาะ admin');
+      }
+
       const current = await repo.findById(id);
       if (!current) throw new NotFoundError('มอเตอร์');
 
@@ -130,32 +144,42 @@ export function createMotorService(repo: MotorRepository, influx?: InfluxSource)
       const touchOffset = 'sensorMountOffset' in patch || movedMount;
       const offset = 'sensorMountOffset' in patch ? patch.sensorMountOffset : null;
 
-      if ((await repo.update(id, { ...patch, sensorMountOffset: offset, touchOffset })) === null) {
-        throw new NotFoundError('มอเตอร์');
+      // tag มี UNIQUE — ชนแล้วเป็นการกระทำของผู้ใช้ ไม่ใช่ระบบพัง ต้องได้ 409 ไม่ใช่ 500
+      let updated: number | null;
+      try {
+        updated = await repo.update(id, { ...patch, sensorMountOffset: offset, touchOffset });
+      } catch (err) {
+        if ((err as { code?: string }).code === '23505') {
+          throw new AppError(409, `รหัส ${patch.tag} ถูกใช้กับมอเตอร์ตัวอื่นแล้ว`);
+        }
+        throw err;
       }
+      if (updated === null) throw new NotFoundError('มอเตอร์');
       return this.detail(id);
     },
 
     /** AC-007-03 · ไม่มีข้อมูลคือ array ว่าง ไม่ใช่ 404 — 404 สงวนไว้ให้ "ไม่มีมอเตอร์ตัวนี้" */
-    async readings(id: number, hours: number): Promise<Reading[]> {
+    async readings(id: number, { start, stop }: ReadingsRange): Promise<Reading[]> {
       if (!(await repo.findById(id))) throw new NotFoundError('มอเตอร์');
 
       // InfluxDB เก็บดิบ 0.5 วินาที · Postgres เก็บสรุปรายนาที
       // InfluxDB ล่มแล้วต้องไม่ทำให้กราฟพังทั้งหน้า — ถอยไปใช้รายนาทีแทน ความละเอียดต่ำลงแต่ยังอ่านได้
       if (influx) {
         try {
-          return (await influx.listReadings(id, hours)) as Reading[];
+          return (await influx.listReadings(id, start, stop)) as Reading[];
         } catch {
           // ตั้งใจกลืน — สาเหตุจริงอยู่ที่ health check ของ InfluxDB ไม่ใช่ที่คำขอนี้
         }
       }
 
-      const rows: ReadingRow[] = await repo.listReadings(id, hours);
+      const rows: ReadingRow[] = await repo.listReadings(id, start, stop);
       return rows.map((r) => ({
         ts: new Date(r.minute_ts).toISOString(),
         vrmsY: num(r.vrms_y_avg),
         vrmsZ: num(r.vrms_z_avg),
         temperature: num(r.temperature_avg),
+        aPeak: null,
+        aRms: null,
         zone: r.zone,
       }));
     },

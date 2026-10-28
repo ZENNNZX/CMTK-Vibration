@@ -49,8 +49,8 @@ export function createInfluxReadingRepository(cfg: InfluxConfig) {
     });
 
   return {
-    async listReadings(motorId: number, hours: number): Promise<InfluxReading[]> {
-      const csv = await query(buildFluxQuery({ bucket: cfg.bucket, motorId, hours }));
+    async listReadings(motorId: number, start: Date, stop: Date): Promise<InfluxReading[]> {
+      const csv = await query(buildFluxQuery({ bucket: cfg.bucket, motorId, start, stop }));
       return parseFluxCsv(csv);
     },
   };

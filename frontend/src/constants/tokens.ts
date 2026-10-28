@@ -37,10 +37,12 @@ export const EVENT_KIND = {
   warning: { text: 'Warning', glyph: '◆', badge: 'bg-warning text-ink', ink: 'text-warning' },
   zone_change: { text: 'เปลี่ยนโซน', glyph: '●', badge: 'bg-secondary text-ink', ink: 'text-secondary' },
   offline: { text: 'เซ็นเซอร์หลุด', glyph: '■', badge: 'bg-offline text-white', ink: 'text-offline' },
+  // มาจากดัชนีสุขภาพหลายตัวแปร (งาน ml) ไม่ใช่การข้ามเกณฑ์ ISO ตรง ๆ จึงต้องแยกให้ออก
+  health_anomaly: { text: 'ดัชนีสุขภาพผิดปกติ', glyph: '◉', badge: 'bg-primary text-on-primary', ink: 'text-primary' },
 } as const;
 
 export type EventKind = keyof typeof EVENT_KIND;
 export const kindOf = (k: string) => EVENT_KIND[k as EventKind] ?? EVENT_KIND.offline;
 
 /** ความรุนแรงเรียงจากมากไปน้อย — วันหนึ่งมีหลายเหตุการณ์ ปฏิทินโชว์ตัวที่หนักสุด */
-export const KIND_RANK: EventKind[] = ['alarm', 'warning', 'offline', 'zone_change'];
+export const KIND_RANK: EventKind[] = ['alarm', 'warning', 'health_anomaly', 'offline', 'zone_change'];

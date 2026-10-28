@@ -30,22 +30,28 @@ export function pickWindow(hours: number): Window {
 export interface QueryInput {
   bucket: string;
   motorId: number;
-  hours: number;
+  start: Date;
+  stop: Date;
 }
 
 /**
  * Flux ไม่มี parameterized query แบบ SQL — ค่าที่ประกอบเข้าสตริงจึงต้องตรวจเอง
- * bucket มาจาก env ส่วน motorId/hours ผ่าน Zod มาแล้ว แต่ตรวจซ้ำที่นี่
+ * bucket มาจาก env ส่วน motorId/ช่วงเวลาผ่าน Zod มาแล้ว แต่ตรวจซ้ำที่นี่
  * เพราะฟังก์ชันนี้อาจถูกเรียกจากที่อื่นในอนาคต (NFR-07)
+ *
+ * Date แปลงเป็น ISO เองไม่มีทางแทรกสตริงอะไรเข้ามาได้ จึงต่อเข้าคิวรีได้ปลอดภัย
  */
-export function buildFluxQuery({ bucket, motorId, hours }: QueryInput): string {
+export function buildFluxQuery({ bucket, motorId, start, stop }: QueryInput): string {
   if (!/^[A-Za-z0-9_.-]+$/.test(bucket)) throw new Error(`ชื่อ bucket ไม่ปลอดภัย: ${bucket}`);
   if (!Number.isInteger(motorId) || motorId <= 0) throw new Error('motorId ต้องเป็นจำนวนเต็มบวก');
-  if (!Number.isInteger(hours) || hours <= 0) throw new Error('hours ต้องเป็นจำนวนเต็มบวก');
+  if (Number.isNaN(start.getTime()) || Number.isNaN(stop.getTime())) {
+    throw new Error('ช่วงเวลาไม่ถูกต้อง');
+  }
+  if (stop <= start) throw new Error('stop ต้องอยู่หลัง start');
 
-  const w = pickWindow(hours);
+  const w = pickWindow((stop.getTime() - start.getTime()) / 3_600_000);
   return `from(bucket: "${bucket}")
-  |> range(start: -${hours}h)
+  |> range(start: ${start.toISOString()}, stop: ${stop.toISOString()})
   |> filter(fn: (r) => r._measurement == "reading" and r.motor_id == "${motorId}")
   |> aggregateWindow(every: ${w.flux}, fn: mean, createEmpty: false)
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
@@ -58,6 +64,7 @@ export interface InfluxReading {
   vrmsZ: number | null;
   temperature: number | null;
   aPeak: number | null;
+  aRms: number | null;
   /** โซนไม่ได้เก็บใน InfluxDB (เป็น boolean อยู่ใน Postgres) — คงรูปแบบเดิมไว้ */
   zone: string | null;
 }
@@ -86,6 +93,7 @@ export function parseFluxCsv(csv: string): InfluxReading[] {
       vrmsZ: num(c[at('vrms_z')]),
       temperature: num(c[at('temperature')]),
       aPeak: num(c[at('a_peak')]),
+      aRms: num(c[at('a_rms')]),
       zone: null,
     });
   }

@@ -9,6 +9,7 @@ const tokenFor = (role: string) =>
   jwt.sign({ sub: 1, email: 'a@b.c', displayName: 'x', role }, SECRET);
 const maintenance = tokenFor('maintenance');
 const manager = tokenFor('manager');
+const admin = tokenFor('admin');
 
 const motorRow = (over: Record<string, unknown> = {}) => ({
   id: 1, tag: 'MOTOR-01', name: 'ปั๊มน้ำ 1', master_no: 2, port_no: 0,
@@ -111,5 +112,51 @@ describe('PATCH /api/motors/:id', () => {
 
   it('พิกัดหลุดขอบเขตโมเดล → 400', async () => {
     expect((await patch({ sensorMountOffset: [99, 0, 0] })).status).toBe(400);
+  });
+
+  // ── ป้ายชื่อมอเตอร์ · admin เท่านั้น ──
+
+  it('maintenance แก้รหัสมอเตอร์ไม่ได้ → 403', async () => {
+    const res = await patch({ tag: 'MOTOR-99' }, maintenance);
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/admin/);
+  });
+
+  it('maintenance แก้ชื่อหรือ kW ไม่ได้ → 403', async () => {
+    expect((await patch({ name: 'ชื่อใหม่' }, maintenance)).status).toBe(403);
+    expect((await patch({ ratedKw: 15 }, maintenance)).status).toBe(403);
+  });
+
+  it('admin แก้รหัส ชื่อ และ kW ได้ครบ', async () => {
+    const res = await patch({ tag: 'PUMP-01', name: 'ปั๊มหล่อเย็น', ratedKw: 11 }, admin, [
+      motorRow({ tag: 'PUMP-01', name: 'ปั๊มหล่อเย็น', rated_kw: '11.00' }),
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ tag: 'PUMP-01', name: 'ปั๊มหล่อเย็น', ratedKw: 11 });
+  });
+
+  it('รหัสว่าง หรือยาวเกิน 32 → 400 ไม่ปล่อยไปชน VARCHAR ใน DB', async () => {
+    expect((await patch({ tag: '   ' }, admin)).status).toBe(400);
+    expect((await patch({ tag: 'M'.repeat(33) }, admin)).status).toBe(400);
+  });
+
+  it('รหัสซ้ำกับมอเตอร์ตัวอื่น → 409 ไม่ใช่ 500', async () => {
+    // uq ของ Postgres โยน 23505 ออกมาตอน UPDATE — ต้องแปลงเป็นความผิดของผู้ใช้
+    const dupDb = {
+      query: async (sql: string) => {
+        if (sql.trimStart().toUpperCase().startsWith('UPDATE')) {
+          throw Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+          });
+        }
+        return { rows: [motorRow()] };
+      },
+    };
+    const res = await request(createApp(dupDb, { jwtSecret: SECRET }))
+      .patch('/api/motors/1')
+      .set('Authorization', `Bearer ${admin}`)
+      .send({ tag: 'MOTOR-02' });
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/MOTOR-02/);
   });
 });

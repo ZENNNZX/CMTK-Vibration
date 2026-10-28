@@ -105,14 +105,21 @@ export class Repository {
     return rows[0]?.id ?? null;
   }
 
-  /** ขอบขาลง → ปิด event ที่เปิดอยู่ (AC-008-04) */
+  /**
+   * ขอบขาลง → ปิด event ที่เปิดอยู่ (AC-008-04)
+   *
+   * ปิดด้วยเวลาที่เรารู้เรื่อง ไม่ใช่ t.at จาก payload — เหตุผลเดียวกับ lastSeen ใน index.ts
+   * ข้อความ retained ตอน reconnect พา timestamp เก่ามาด้วย (เจอจริง: raised 09-16 07:49
+   * แต่ payload บอก 09-15 20:18) แล้วชน ck_resolve → event ค้างเปิดถาวร ปิดไม่ลงสักที
+   * GREATEST กันกรณีนาฬิกาบอร์ดล้ำหน้าจน raised_at เป็นอนาคต (บั๊ก +7 ชม. รอบก่อน)
+   */
   async closeEvent(t: Transition): Promise<void> {
     await this.pool.query(
       `UPDATE alarm_events
-          SET resolved_at = $4
+          SET resolved_at = GREATEST(now(), raised_at)
         WHERE motor_id = $1 AND kind = $2 AND metric = $3
           AND resolved_at IS NULL`,
-      [t.motorId, t.kind, t.metric, t.at],
+      [t.motorId, t.kind, t.metric],
     );
   }
 

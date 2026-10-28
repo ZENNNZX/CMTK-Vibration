@@ -10,7 +10,7 @@ import { motorIdSchema, motorPatchSchema, readingsQuerySchema } from '../validat
 
 /** ที่มาของอนุกรมเวลาความละเอียดสูง — ไม่มีก็ใช้ Postgres แทน */
 export interface InfluxSource {
-  listReadings(motorId: number, hours: number): Promise<unknown[]>;
+  listReadings(motorId: number, start: Date, stop: Date): Promise<unknown[]>;
 }
 
 export function motorRoute(db: Db, jwtSecret: string, influx?: InfluxSource): Router {

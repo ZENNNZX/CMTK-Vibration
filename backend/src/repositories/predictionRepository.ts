@@ -15,22 +15,38 @@ export interface DailyAvgRow {
   avg: string;
 }
 
-/** ค่าเฉลี่ยรายวันต่อเมตริก — ทำนายเป็นรายวัน จึงต้องย่อจากรายนาทีก่อน */
+export interface UpcomingRow {
+  target_day: string;
+  horizon_days: number;
+  predicted_value: string;
+  ci_low: string;
+  ci_high: string;
+}
+
+/**
+ * วันที่เครื่องเดินน้อยกว่านี้ไม่นับเป็นจุดข้อมูล — เศษกะครึ่งชั่วโมง
+ * ไม่ใช่ตัวแทนของทั้งวัน แต่ถ่วงเส้นฟิตได้เท่ากับวันที่เดินเต็ม
+ */
+const MIN_RUNNING_MINUTES = 30;
+
+/**
+ * ค่าเฉลี่ยรายวันต่อเมตริก — อ่านจาก v_motor_daily ซึ่งกรองเฉพาะนาทีที่เครื่องเดินไว้แล้ว
+ * เกณฑ์ "เดิน" อยู่ใน migration 013 ที่เดียว ห้ามเขียนซ้ำที่นี่
+ */
 const DAILY_AVG = (col: string) => `
-  SELECT (minute_ts AT TIME ZONE 'Asia/Bangkok')::date::text AS day,
-         AVG(${col})::text AS avg
-    FROM readings_minute
+  SELECT day::text AS day, ${col}::text AS avg
+    FROM v_motor_daily
    WHERE motor_id = $1
      AND ${col} IS NOT NULL
-     AND minute_ts >= NOW() - ($2 || ' days')::interval
-   GROUP BY 1
-   ORDER BY 1`;
+     AND n_running >= ${MIN_RUNNING_MINUTES}
+     AND day >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date - ($2)::int
+   ORDER BY day`;
 
 // เมตริกมาจากคีย์ตายตัวสามตัวนี้เท่านั้น ไม่มีอะไรจากผู้ใช้เข้าไปในสตริง SQL (NFR-07)
 const COLUMN: Record<string, string> = {
-  vrms_y: 'vrms_y_avg',
-  vrms_z: 'vrms_z_avg',
-  temperature: 'temperature_avg',
+  vrms_y: 'vrms_y',
+  vrms_z: 'vrms_z',
+  temperature: 'temperature',
 };
 export const METRICS = Object.keys(COLUMN);
 
@@ -112,6 +128,27 @@ export function createPredictionRepository(db: Db) {
           ORDER BY p.target_day`,
         [firstDay],
       )) as { rows: PredictionRow[] };
+      return res.rows;
+    },
+
+    /**
+     * ค่าที่ทำนายไว้ 90 วันย้อนหลังถึงวันข้างหน้า — ใช้วาดเส้นประบนกราฟหน้ารายละเอียด
+     * ย้อนหลังเพื่อเทียบกับค่าจริง · 90 = ช่วงยาวสุดที่หน้านั้นให้เลือก
+     * DISTINCT ON เลือก horizon สั้นสุดของแต่ละวัน เพราะทำนายใกล้กว่าย่อมแม่นกว่า
+     * และวันเดียวกันถูกทำนายได้หลายรอบจากคนละ horizon
+     */
+    async upcoming(motorId: number, metric: string): Promise<UpcomingRow[]> {
+      if (!COLUMN[metric]) throw new Error(`เมตริกที่ไม่รู้จัก: ${metric}`);
+      const res = (await db.query(
+        `SELECT DISTINCT ON (target_day)
+                target_day::text, horizon_days, predicted_value, ci_low, ci_high
+           FROM predictions
+          WHERE motor_id = $1
+            AND metric = $2::predict_metric
+            AND target_day >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date - 90
+          ORDER BY target_day, horizon_days`,
+        [motorId, metric],
+      )) as { rows: UpcomingRow[] };
       return res.rows;
     },
 

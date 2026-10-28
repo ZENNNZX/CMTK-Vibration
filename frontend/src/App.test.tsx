@@ -16,7 +16,12 @@ const detail = {
 };
 
 const api = vi.fn(async (url: string) => {
-  const body = url.includes('/readings') ? [] : url.match(/\/motors\/\d+$/) ? detail : [motor()];
+  const body =
+    url.includes('/predictions') || url.includes('/readings')
+      ? []
+      : url.match(/\/motors\/\d+$/)
+        ? detail
+        : [motor()];
   return new Response(JSON.stringify({ success: true, data: body }), { status: 200 });
 });
 

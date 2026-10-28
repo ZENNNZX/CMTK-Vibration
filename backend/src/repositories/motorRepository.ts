@@ -63,6 +63,9 @@ export function createMotorRepository(db: Db) {
     async update(
       id: number,
       p: {
+        tag?: string;
+        name?: string;
+        ratedKw?: number;
         warningThreshold?: number;
         alarmThreshold?: number;
         sensorMount?: string;
@@ -77,7 +80,10 @@ export function createMotorRepository(db: Db) {
                 sensor_mount      = COALESCE($4::mount_point, sensor_mount),
                 -- offset ต่างจากตัวอื่น: null คือ "คืนค่ามาตรฐาน" ไม่ใช่ "ไม่แตะ"
                 -- จึงต้องมีธงแยกว่าคำขอนี้พูดถึง offset หรือเปล่า
-                sensor_mount_offset = CASE WHEN $5 THEN $6::jsonb ELSE sensor_mount_offset END
+                sensor_mount_offset = CASE WHEN $5 THEN $6::jsonb ELSE sensor_mount_offset END,
+                tag               = COALESCE($7, tag),
+                name              = COALESCE($8, name),
+                rated_kw          = COALESCE($9, rated_kw)
           WHERE id = $1 AND is_active
         RETURNING id`,
         [
@@ -89,19 +95,22 @@ export function createMotorRepository(db: Db) {
           p.sensorMountOffset === null || p.sensorMountOffset === undefined
             ? null
             : JSON.stringify(p.sensorMountOffset),
+          p.tag ?? null,
+          p.name ?? null,
+          p.ratedKw ?? null,
         ],
       )) as { rows: { id: number }[] };
       return res.rows[0]?.id ?? null;
     },
 
-    /** อนุกรมเวลาย้อนหลัง N ชั่วโมง — ใช้ index (motor_id, minute_ts DESC) ตรง ๆ */
-    async listReadings(motorId: number, hours: number): Promise<ReadingRow[]> {
+    /** อนุกรมเวลาในช่วง [start, stop) — ใช้ index (motor_id, minute_ts DESC) ตรง ๆ */
+    async listReadings(motorId: number, start: Date, stop: Date): Promise<ReadingRow[]> {
       const res = (await db.query(
         `SELECT minute_ts, vrms_y_avg, vrms_z_avg, temperature_avg, zone::text
            FROM readings_minute
-          WHERE motor_id = $1 AND minute_ts >= NOW() - ($2 || ' hours')::interval
+          WHERE motor_id = $1 AND minute_ts >= $2 AND minute_ts < $3
           ORDER BY minute_ts`,
-        [motorId, hours],
+        [motorId, start, stop],
       )) as { rows: ReadingRow[] };
       return res.rows;
     },

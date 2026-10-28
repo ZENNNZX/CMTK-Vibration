@@ -10,6 +10,13 @@ export function createPredictionController(service: PredictionService) {
       .catch(next);
   };
 
+  const upcoming: RequestHandler = (_req, res, next) => {
+    service
+      .upcoming(res.locals.params.id, res.locals.query.metric)
+      .then((data) => res.json({ success: true, data }))
+      .catch(next);
+  };
+
   // เรียกมือได้ตอนตรวจงาน — ปกติ job รันเองทุกชั่วโมง
   const run: RequestHandler = (_req, res, next) => {
     Promise.all([service.generate(), service.scoreDue()])
@@ -17,5 +24,5 @@ export function createPredictionController(service: PredictionService) {
       .catch(next);
   };
 
-  return { summary, run };
+  return { summary, upcoming, run };
 }

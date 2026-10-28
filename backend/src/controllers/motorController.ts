@@ -20,14 +20,14 @@ export function createMotorController(service: MotorService) {
 
   const readings: RequestHandler = (_req, res, next) => {
     service
-      .readings(res.locals.params.id, res.locals.query.hours)
+      .readings(res.locals.params.id, res.locals.query)
       .then((data) => res.json({ success: true, data }))
       .catch(next);
   };
 
   const update: RequestHandler = (req, res, next) => {
     service
-      .update(res.locals.params.id, req.body)
+      .update(res.locals.params.id, req.body, req.user?.role)
       .then((data) => res.json({ success: true, data }))
       .catch(next);
   };

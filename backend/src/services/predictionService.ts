@@ -14,6 +14,14 @@ export interface MotorScore {
   score: Score | null;
 }
 
+export interface Upcoming {
+  targetDay: string;
+  horizonDays: number;
+  predicted: number;
+  ciLow: number;
+  ciHigh: number;
+}
+
 export interface MonthSummary {
   month: string;
   threshold: number;
@@ -31,6 +39,13 @@ const dayKeyTH = (d: Date) =>
     day: '2-digit',
   }).format(d);
 
+/**
+ * ระยะห่างเป็นวันระหว่างสองวันตามปฏิทินไทย — ใช้เป็นแกน x ของเส้นฟิต
+ * ผูก +07:00 ให้ชัด ไม่งั้น 'YYYY-MM-DD' จะถูกอ่านเป็นเที่ยงคืน UTC แล้วเพี้ยนไป 7 ชั่วโมง
+ */
+const dayIndex = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T00:00:00+07:00`) - Date.parse(`${from}T00:00:00+07:00`)) / 86_400_000);
+
 export function createPredictionService(repo: PredictionRepository) {
   return {
     /**
@@ -42,20 +57,26 @@ export function createPredictionService(repo: PredictionRepository) {
       for (const motorId of await repo.activeMotorIds()) {
         for (const metric of METRICS) {
           const rows = await repo.dailyAverages(motorId, metric, FIT_DAYS);
-          const points = rows.map((r, i) => ({ x: i, y: Number(r.avg) }));
+          if (!rows.length) continue;
+
+          // x เป็นจำนวนวันจริงนับจากวันแรกของชุด ไม่ใช่ลำดับแถว —
+          // วันที่เครื่องไม่เดินเลยจะไม่มีแถว ถ้านับตามลำดับแถวจะกลายเป็นว่าวันหายไม่เคยมีอยู่
+          // ความชันที่ได้จึงชันเกินจริง และ "อีก h วัน" ก็ไม่ได้แปลว่า h วันจริง ๆ
+          const points = rows.map((r) => ({ x: dayIndex(rows[0].day, r.day), y: Number(r.avg) }));
           const fit = fitLinear(points);
           if (!fit) continue;
 
-          const lastX = points.length - 1;
           for (const h of HORIZONS) {
             const target = new Date(now.getTime() + h * 86_400_000);
-            const value = fit.slope * (lastX + h) + fit.intercept;
+            const targetDay = dayKeyTH(target);
+            // วางค่าที่จะทำนายบนแกนเดียวกับชุดที่ฟิต — วันสุดท้ายที่มีข้อมูลอาจไม่ใช่วันนี้
+            const value = fit.slope * dayIndex(rows[0].day, targetDay) + fit.intercept;
             // ช่วงความเชื่อมั่นกว้างขึ้นตามระยะที่ทำนายไกลออกไป
             const spread = fit.se * 1.96 * (1 + h / Math.max(...HORIZONS));
             await repo.insert({
               motorId,
               metric,
-              targetDay: dayKeyTH(target),
+              targetDay,
               horizonDays: h,
               sampleCount: fit.n,
               predictedValue: Math.max(0, +value.toFixed(3)),
@@ -72,6 +93,22 @@ export function createPredictionService(repo: PredictionRepository) {
     /** เติมค่าจริงให้แถวที่วันนั้นผ่านไปแล้ว */
     async scoreDue(): Promise<number> {
       return repo.fillActuals();
+    },
+
+    /**
+     * เส้นทำนายสำหรับกราฟหน้ารายละเอียด — คืนค่าที่ "บันทึกไว้ตอนทำนาย" ไม่ใช่ฟิตใหม่ตอนเรียก
+     * ถ้าฟิตใหม่ เส้นที่ผู้ใช้เห็นจะไม่ใช่เส้นเดียวกับที่หน้าสรุปรายเดือนเอาไปให้คะแนน
+     * กลายเป็นคนละคำทำนายที่อ้างคะแนนเดียวกัน
+     */
+    async upcoming(motorId: number, metric = 'vrms_y'): Promise<Upcoming[]> {
+      const rows = await repo.upcoming(motorId, metric);
+      return rows.map((r) => ({
+        targetDay: r.target_day,
+        horizonDays: Number(r.horizon_days),
+        predicted: Number(r.predicted_value),
+        ciLow: Number(r.ci_low),
+        ciHigh: Number(r.ci_high),
+      }));
     },
 
     async summary(month: string, threshold: number): Promise<MonthSummary> {

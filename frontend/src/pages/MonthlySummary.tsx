@@ -64,7 +64,9 @@ function Metric({ label, value, formula, hint }: { label: string; value: string;
 export function MonthlySummary() {
   const months = useMemo(recentMonths, []);
   const [month, setMonth] = useState(months[0]);
-  const [threshold, setThreshold] = useState(2.8);
+  // 1.8 = ขอบโซน B→C ตาม ISO 10816-1 Class I ตรงกับเส้น Warning ที่ระบบใช้เตือนจริง
+  // ต้องตรงกับค่าตั้งต้นฝั่ง backend (predictionValidators.ts) ไม่งั้นรีเฟรชแล้วตัวเลขเปลี่ยน
+  const [threshold, setThreshold] = useState(1.8);
   const [view, setView] = useState<View>({ kind: 'loading' });
   const monthId = useId();
   const thrId = useId();
