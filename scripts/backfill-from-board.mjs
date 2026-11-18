@@ -36,6 +36,17 @@ const env = Object.fromEntries(
  */
 const OFFSET_MS = Number(env.SENSOR_CLOCK_OFFSET_MINUTES ?? -420) * 60_000;
 
+/**
+ * บอร์ด restart 2026-10-28 แล้วนาฬิกากลายเป็น UTC จริง — ป้ายเวลาไทยสุดท้าย 05:35:42Z · ป้าย UTC แรก 06:24:27Z
+ * ป้ายก่อนจุดนี้ต้อง -420 เสมอ ไม่ว่า .env จะตั้งอะไร ไม่งั้นดึงวันเก่าแล้วข้อมูลลงผิดที่ 7 ชม.
+ */
+const CLOCK_FIXED_LABEL = Date.parse('2026-10-28T06:00:00Z');
+const THAI_MS = -420 * 60_000;
+/** ป้ายบอร์ด → ระยะที่ต้องบวกให้เป็นเวลาจริง */
+const offsetOf = (label) => (label < CLOCK_FIXED_LABEL ? THAI_MS : OFFSET_MS);
+/** เวลาจริง → ป้ายบอร์ด (ทางกลับของ offsetOf) */
+const toLabel = (real) => (real - THAI_MS < CLOCK_FIXED_LABEL ? real - THAI_MS : real - OFFSET_MS);
+
 /** ชื่อคอลัมน์บนบอร์ดมีหน่วยต่อท้าย ต่างจากชื่อใน payload MQTT จึงใช้ FIELD_MAP ของ ingestion ไม่ได้ */
 const FIELDS = {
   'Temperature [°C]': 'temperature',
@@ -184,7 +195,7 @@ for (const k of ['INFLUX_URL', 'INFLUX_DB', 'INFLUX_USER', 'INFLUX_PASS', 'INFLU
   }
 }
 
-console.log('ชดเชยนาฬิกาบอร์ด', OFFSET_MS / 60_000, 'นาที · ดึงทีละ', CHUNK_MS / 3_600_000, 'ชม.\n');
+console.log('ชดเชยนาฬิกาบอร์ด', OFFSET_MS / 60_000, 'นาที (ป้ายก่อน', new Date(CLOCK_FIXED_LABEL).toISOString(), 'ใช้ -420) · ดึงทีละ', CHUNK_MS / 3_600_000, 'ชม.\n');
 
 /** field ที่พอร์ตนั้นมีจริง — เลือก field ที่ไม่มีอยู่ InfluxDB 1.x จะคืนซีรีส์เปล่าทั้งก้อน */
 const fieldsOf = async (port) => {
@@ -211,8 +222,8 @@ if (argFrom === null) {
 }
 
 // อาร์กิวเมนต์เป็นวันตามเวลาจริง แปลงกลับเป็นนาฬิกาบอร์ดเพื่อถามให้ตรงช่อง
-const from = argFrom !== null ? argFrom - OFFSET_MS : Math.floor(boardFirst / DAY_MS) * DAY_MS;
-const to = argTo !== null ? argTo - OFFSET_MS : Date.now() - OFFSET_MS;
+const from = argFrom !== null ? toLabel(argFrom) : Math.floor(boardFirst / DAY_MS) * DAY_MS;
+const to = toLabel(argTo ?? Date.now());
 
 const fieldsByPort = {};
 for (const m of MOTORS) fieldsByPort[m.port] = await retry(`อ่าน field port${m.port}`, () => fieldsOf(m.port));
@@ -222,7 +233,7 @@ let totalSkipped = 0;
 const t0 = Date.now();
 
 for (let day = from; day < to; day += DAY_MS) {
-  const realDay = day + OFFSET_MS;
+  const realDay = day + offsetOf(day);
   const label = ymd(realDay);
 
   for (const m of MOTORS) {
@@ -255,7 +266,7 @@ for (let day = from; day < to; day += DAY_MS) {
       const idx = s.columns.map((c2, i) => [FIELDS[c2], i]).filter(([k]) => k);
       const batch = [];
       for (const row of s.values) {
-        const ns = (row[0] + OFFSET_MS) * 1e6;
+        const ns = (row[0] + offsetOf(row[0])) * 1e6;
         const f = [];
         for (const [key, i] of idx) {
           const v = row[i];

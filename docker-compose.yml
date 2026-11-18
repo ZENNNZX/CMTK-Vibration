@@ -44,9 +44,6 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: cmtk-api
-    # ไม่ขึ้นตอน deploy ปกติ — ingestion ต้องเริ่มเก็บข้อมูลโดยไม่รอ build frontend บน arm64
-    # เปิดเมื่อพร้อม: docker compose --profile web up -d  (หรือลบสองบรรทัดนี้)
-    profiles: [web]
     environment:
       NODE_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}

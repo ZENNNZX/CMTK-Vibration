@@ -4,6 +4,7 @@
 # ── frontend build ─────────────────────────────────────
 FROM node:22-alpine AS web
 WORKDIR /web
+ENV npm_config_registry=https://registry.npmmirror.com
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
@@ -12,6 +13,7 @@ RUN npm run build
 # ── backend build ──────────────────────────────────────
 FROM node:22-alpine AS build
 WORKDIR /app
+ENV npm_config_registry=https://registry.npmmirror.com
 COPY backend/package*.json ./
 RUN npm ci
 COPY backend/tsconfig.json ./
@@ -23,6 +25,7 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 ENV STATIC_DIR=/app/public
+ENV npm_config_registry=https://registry.npmmirror.com
 
 COPY backend/package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
