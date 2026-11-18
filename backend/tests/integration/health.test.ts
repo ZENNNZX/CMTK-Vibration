@@ -25,6 +25,15 @@ describe('GET /api/health', () => {
   });
 });
 
+describe('header ความปลอดภัย บนเว็บที่เสิร์ฟผ่าน http ธรรมดา (192.168.50.65:49180)', () => {
+  it('ห้ามสั่งเบราว์เซอร์อัปเกรดเป็น https — ไม่มี TLS ไฟล์ JS/CSS จะโหลดไม่ขึ้น (ERR_SSL_PROTOCOL_ERROR)', async () => {
+    const res = await request(createApp(up)).get('/api/health');
+    expect(res.headers['content-security-policy']).toBeDefined();
+    expect(res.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
+    expect(res.headers['strict-transport-security']).toBeUndefined();
+  });
+});
+
 describe('เส้นทางที่ไม่มีจริง', () => {
   it('→ 404 รูปแบบเดียวกับ error อื่น', async () => {
     const res = await request(createApp(up)).get('/api/no-such-thing');

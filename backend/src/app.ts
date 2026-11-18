@@ -30,7 +30,14 @@ export function createApp(db: Db, opts: AppOptions = {}): express.Express {
 
   const app = express();
 
-  app.use(helmet());
+  // เว็บเสิร์ฟผ่าน http ธรรมดาใน LAN ไม่มี TLS — ค่า default ของ helmet สั่งเบราว์เซอร์อัปเกรดเป็น https
+  // แล้ว JS/CSS โหลดไม่ขึ้น (ERR_SSL_PROTOCOL_ERROR) · ใส่ TLS เมื่อไหร่ค่อยเปิดสองตัวนี้คืน
+  app.use(
+    helmet({
+      contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } },
+      strictTransportSecurity: false,
+    }),
+  );
   app.use(express.json());
 
   app.use('/api', healthRoute(db));
